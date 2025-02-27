@@ -9,7 +9,7 @@ TOKEN = "8165670569:AAFMJr0woZA4RSZApyhrAQgFzfe2F1XY_wc"
 
 # 🔹 Загружаем Excel
 file_path = "questions.xlsx"
-df = pd.read_excel(file_path, engine="openpyxl")
+df = pd.read_excel("/home/skyscraperann/GuideCertBot/questions.xlsx", engine="openpyxl")
 
 # 🔹 Заполняем пустые значения, чтобы избежать NaN
 df = df.fillna("-")
