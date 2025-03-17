@@ -1,0 +1,13 @@
+version: '3.7'
+
+services:
+  guide-cert-bot:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    security_opt:
+    - seccomp:unconfined
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_API_KEY=TELEGRAM_BOT_API_KEY
+    command: sleep 1000000000

@@ -1,3 +1,4 @@
+import os
 import logging
 import random
 import pandas as pd
@@ -5,11 +6,11 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
 # 🔹 Вставь свой API-токен от @BotFather
-TOKEN = "8165670569:AAFMJr0woZA4RSZApyhrAQgFzfe2F1XY_wc"
+TOKEN = os.getenv('TELEGRAM_BOT_API_KEY')
 
 # 🔹 Загружаем Excel
 file_path = "questions.xlsx"
-df = pd.read_excel("/home/skyscraperann/GuideCertBot/questions.xlsx", engine="openpyxl")
+df = pd.read_excel("/app/questions.xlsx", engine="openpyxl")
 
 # 🔹 Заполняем пустые значения, чтобы избежать NaN
 df = df.fillna("-")
