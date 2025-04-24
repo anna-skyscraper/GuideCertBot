@@ -5,119 +5,167 @@ import pandas as pd
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
-# 🔹 Вставь свой API-токен от @BotFather
+# 🔹 API Token from BotFather
 TOKEN = os.getenv('TELEGRAM_BOT_API_KEY')
 
-# 🔹 Загружаем Excel
-file_path = "questions.xlsx"
-df = pd.read_excel("/app/questions.xlsx", engine="openpyxl")
+# 🔹 Load Excel files
+df = pd.read_excel("/app/questions.xlsx", engine="openpyxl")  # Санкт-Петербург
+df_yaroslavl = pd.read_excel("/app/questions_Yaroslavl.xlsx", engine="openpyxl")  # Ярославль
 
-# 🔹 Заполняем пустые значения, чтобы избежать NaN
+# 🔹 Fill missing values
 df = df.fillna("-")
+df_yaroslavl = df_yaroslavl.fillna("-")
 
-# 🔹 Выводим заголовки в консоль для проверки
-print("Заголовки столбцов в файле:", df.columns.tolist())
-
-# 🔹 Преобразуем в список словарей
+# 🔹 Convert to list of dicts
 all_questions = df.to_dict(orient="records")
+all_yaroslavl = df_yaroslavl.to_dict(orient="records")
 
-# 🔹 Настраиваем логирование (чтобы не было лишних сообщений)
+# 🔹 Logging config
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.WARNING  # Показываем только важные ошибки
+    level=logging.WARNING
 )
 
-# 🔹 Словарь для хранения данных пользователей
 user_data = {}
 
 async def start(update: Update, context: CallbackContext) -> None:
-    """Запуск бота"""
+    """Start command: prompts city selection"""
     user_id = update.message.chat_id
-    user_data[user_id] = {"score": 0, "current_question": 0, "questions": random.sample(all_questions, 35)}
-    await update.message.reply_text("Привет! Давай проверим твои знания. Напиши /quiz, чтобы начать тест.")
+    keyboard = [["Санкт-Петербург"], ["Ярославль"]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    await update.message.reply_text("Привет! Выбери город, чтобы начать тест:", reply_markup=reply_markup)
 
 async def quiz(update: Update, context: CallbackContext) -> None:
-    """Выдаёт вопрос пользователю"""
+    """Sends a question"""
     user_id = update.message.chat_id
 
-    if user_id not in user_data:
-        await update.message.reply_text("Напиши /start, чтобы начать тест.")
+    if user_id not in user_data or "questions" not in user_data[user_id]:
+        await update.message.reply_text("Сначала выбери город командой /start.")
         return
 
     user_info = user_data[user_id]
-    
+
     if user_info["current_question"] >= len(user_info["questions"]):
-        # 🔹 Тест завершён – показываем кнопку "Пройти заново"
         score = user_info["score"]
         keyboard = [["🔄 Пройти заново"]]
         reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
 
-        await update.message.reply_text(f"✅ Тест завершён! Ты набрал {score} из 35 баллов.\n\nХотите попробовать снова?", reply_markup=reply_markup)
+        await update.message.reply_text(
+            f"✅ Тест завершён! Ты набрал {score} из 25 баллов.\n\nХотите попробовать снова?",
+            reply_markup=reply_markup
+        )
         return
 
-    question = user_info["questions"][user_info["current_question"]]
-    user_info["current_question"] += 1  # Переход к следующему вопросу
-    context.user_data["current_question"] = question  # Сохраняем текущий вопрос
+    question_index = user_info["current_question"]
+    question = user_info["questions"][question_index]
+    user_info["current_question"] += 1
 
-    # 🔹 Преобразуем все варианты ответа в строки
-    options = [str(question["Вариант 1"]), str(question["Вариант 2"]), str(question["Вариант 3"])]
+    context.user_data["current_question"] = question
 
-    # 🔹 Создаём клавиатуру (делаем кнопки вертикально)
-    keyboard = [[options[0]], [options[1]], [options[2]]]
+    options = [(k, str(v)) for k, v in question.items() if k.startswith("Вариант") and str(v).strip() != "-"]
+    random.shuffle(options)
+
+    context.user_data["shuffled_options"] = [val.lower().strip() for _, val in options]
+
+    keyboard = [[val] for _, val in options]
+    keyboard.append(["🏁 Завершить тест"])  # Add end test button
+
     reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
 
     await update.message.reply_text(question["Вопрос"], reply_markup=reply_markup)
 
 async def answer(update: Update, context: CallbackContext) -> None:
-    """Проверяет ответ пользователя"""
     user_id = update.message.chat_id
-    text = update.message.text.strip().lower()  # 🔹 Удаляем пробелы и приводим к нижнему регистру
+    text = update.message.text.strip()
 
-    if text == "🔄 пройти заново":
-        await start(update, context)  # Перезапускаем тест
+    if text == "🔄 Пройти заново":
+        user_data.pop(user_id, None)
+        context.user_data.clear()
+        await start(update, context)
         return
 
-    if "current_question" not in context.user_data:
-        await update.message.reply_text("Напиши /quiz, чтобы начать тест.")
+    if text == "▶️ Начать тест":
+        await quiz(update, context)
+        return
+
+    if text == "🏁 Завершить тест":
+        score = user_data[user_id]["score"]
+        keyboard = [["🔄 Пройти заново"]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+
+        await update.message.reply_text(
+            f"🏁 Тест завершён досрочно! Твой результат: {score} из 25.",
+            reply_markup=reply_markup
+        )
+
+        context.user_data.clear()
+        return
+
+    if user_id not in user_data:
+        if text in ["Санкт-Петербург", "Ярославль"]:
+            selected_questions = all_questions if text == "Санкт-Петербург" else all_yaroslavl
+            selected_questions = [
+                q for q in selected_questions
+                if any(str(q.get(k)).strip() != "-" for k in q if k.startswith("Вариант"))
+            ]
+            if not selected_questions:
+                await update.message.reply_text("⚠️ Вопросы не найдены.")
+                return
+
+            context.user_data.clear()
+            user_data[user_id] = {
+                "city": text,
+                "score": 0,
+                "current_question": 0,
+                "questions": random.sample(selected_questions, min(len(selected_questions), 25))
+            }
+
+            keyboard = [["▶️ Начать тест"]]
+            reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+
+            await update.message.reply_text(
+                f"✅ Город {text} выбран. Нажми кнопку ниже, чтобы начать тест.",
+                reply_markup=reply_markup
+            )
+            return
+        else:
+            await update.message.reply_text("Пожалуйста, выбери город из предложенных.")
+            return
+
+    if "current_question" not in context.user_data or "shuffled_options" not in context.user_data:
+        await update.message.reply_text("Напиши /start и выбери город, чтобы начать тест.")
         return
 
     question = context.user_data["current_question"]
-    correct_answer = str(question["Правильный ответ (текст)"]).strip().lower()  # 🔹 Аналогично очищаем правильный ответ
+    correct_answer = str(question["Правильный ответ (текст)"]).strip().lower()
+    user_answer = text.strip().lower()
 
-    if text == correct_answer:
+    if user_answer == correct_answer:
         user_data[user_id]["score"] += 1
         await update.message.reply_text("✅ Верно!")
     else:
         await update.message.reply_text(f"❌ Неверно. Правильный ответ: {question['Правильный ответ (текст)']}")
 
-    # Показываем следующий вопрос
     await quiz(update, context)
 
 async def stats(update: Update, context: CallbackContext) -> None:
-    """Показывает текущий результат пользователя"""
     user_id = update.message.chat_id
     if user_id in user_data:
         score = user_data[user_id]["score"]
-        await update.message.reply_text(f"📊 Твой текущий результат: {score} из 35.")
+        await update.message.reply_text(f"📊 Твой текущий результат: {score} из 25.")
     else:
-        await update.message.reply_text("Ты ещё не начал тест. Напиши /quiz!")
+        await update.message.reply_text("Ты ещё не начал тест. Напиши /start!")
 
 def main():
-    """Запуск бота"""
     print("🔹 Бот запускается...")
 
-    # 🔹 Новый способ работы с bot API в версии 20+
     app = Application.builder().token(TOKEN).build()
 
-    # Добавляем обработчики команд
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("quiz", quiz))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, answer))
 
     print("✅ Бот работает! Ожидание сообщений...")
-
-    # Запускаем бота
     app.run_polling()
 
 if __name__ == "__main__":
